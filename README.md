@@ -12,6 +12,9 @@ This project implements a prototype system for **automated bird counting and wei
 Designed for **commercial poultry farms** with static cameras and naturally moving birds in constrained spaces.
 
 ---
+## Demo
+
+[![Watch the video](https://img.youtube.com/vi/0BOnEA6IgQI/0.jpg)](https://youtu.be/0BOnEA6IgQI)
 
 ## 🧠 Methodology
 

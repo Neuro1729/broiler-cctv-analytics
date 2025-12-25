@@ -1,170 +1,183 @@
-## Bird Counting and Weight Estimation from CCTV Video
 
-### Overview
+# 🐔 Bird Counting and Weight Estimation from Poultry CCTV Video
 
-This project implements a prototype system for automated **bird counting and weight estimation** from fixed-camera poultry CCTV footage. The system combines deep-learning-based object detection with multi-object tracking to produce:
+## Overview
+This project implements a prototype system for **automated bird counting and weight estimation** from fixed-camera poultry CCTV footage. Leveraging **deep learning** and **multi-object tracking**, the system delivers:
 
-* Bird counts over time (timestamp → count)
-* Per-bird weight estimation using a **relative weight proxy**
-* Annotated CCTV video with tracking IDs and bounding boxes
-* A FastAPI service for automated batch or live video analysis
+- **Bird counts over time** (timestamp → count)  
+- **Per-bird relative weight estimation** using bounding-box area as a proxy  
+- **Annotated output video** with tracking IDs and bounding boxes  
+- A **FastAPI service** for automated batch analysis of uploaded videos  
 
-The solution is designed for commercial poultry farm environments where cameras are static and birds move naturally within a constrained area.
-
----
-
-## Methodology
-
-### 1. Bird Counting (Detection + Tracking)
-
-**Detector**
-A custom-trained **YOLO** model is used to detect individual birds in CCTV frames.
-
-**Tracker**
-**ByteTrack** (via BoxMOT) assigns persistent IDs to birds across frames.
-
-Each bird receives a **stable track ID**, allowing us to:
-
-* Count unique birds per frame
-* Avoid double counting
-* Follow the same bird over time
-
-The count at any timestamp is simply the number of **active tracking IDs** in that frame.
+Designed for **commercial poultry farms** with static cameras and naturally moving birds in constrained spaces.
 
 ---
 
-### 2. Tiled Inference (High-Density Flocks)
+## 🧠 Methodology
 
-Poultry CCTV often contains **dozens of birds in a single frame**, which reduces detection accuracy if processed at full resolution.
+### 1. **Bird Counting (Detection + Tracking)**
+- **Detector**: Custom-trained **YOLOv8** model (`best.pt`) fine-tuned on poultry CCTV data  
+- **Tracker**: **ByteTrack** (via `boxmot`) for robust, persistent ID assignment  
+- Count per frame = number of **active unique track IDs** → avoids double-counting  
 
-To solve this, we use **spatial tiling**:
+### 2. **Tiled Inference for Dense Flocks**
+To handle frames with **dozens of birds**, each frame is split into a **3×3 grid**:
+- YOLO runs independently on each tile  
+- Detections are merged back to full-frame coordinates  
+- **Improves recall** for small/occluded birds in crowded scenes  
 
-* Each frame is split into a **3×3 grid (9 tiles)**
-* YOLO runs on each tile independently
-* Bounding boxes are merged back into full-frame coordinates
+### 3. **Occlusion Robustness & ID Stability**
+- **Large track buffer** (600 frames) maintains IDs during:
+  - Temporary occlusions
+  - Missed detections (due to blur/lighting)
+- Tracking (not raw detection) ensures **stable counts**  
 
-This improves:
-
-* Small bird detection
-* Occluded bird recovery
-* Overall recall in dense scenes
-
----
-
-### 3. Handling Occlusions and ID Stability
-
-ByteTrack performs **motion-based association** with confidence-aware matching.
-We configure a **large track buffer (e.g., 600 frames)** so that a bird’s ID is not lost when:
-
-* It passes behind another bird
-* It is temporarily missed by the detector
-* Lighting or motion blur causes low confidence
-
-Counting is based on **tracking IDs, not raw detections**, which prevents double-counting during overlaps.
-
----
-
-## Weight Estimation
-
-True bird weights are not available in the CCTV data, so the system uses a **relative weight proxy**.
-
-### Weight Proxy (Implemented)
-
-For each tracked bird:
-
+### 4. **Weight Estimation (Relative Proxy)**
+Since true weights are unavailable:
+```python
+weight_proxy = bounding_box_width × bounding_box_height  # (pixels²)
 ```
-weight_index = bounding_box_width × bounding_box_height   (pixels²)
-```
+- In a **fixed camera**, pixel area correlates strongly with bird mass  
+- Each tracked bird logs area + confidence per frame in JSON output  
 
-In a fixed camera:
+> 🔧 **To convert to grams**: calibrate using known weights + camera pixel-to-cm ratio, then fit a linear regression:  
+> `weight (g) = m × area + c`
 
-* Larger birds occupy more pixels
-* Smaller birds occupy fewer pixels
-
-Thus, bounding-box area is a **strong proxy for relative mass**.
-
-Each bird’s area is logged per frame and stored in JSON along with detection confidence.
+### 5. **Video Preprocessing (For Efficiency)**
+- Input videos should be **H.264 MP4**, **~720p**, **10 FPS**  
+- Reduces file size by **>90%** with minimal impact on tracking accuracy  
 
 ---
 
-### Converting Proxy → Real Weight (grams)
+## 🚀 API Endpoints
 
-To convert the weight index into real-world grams, the following is required:
-
-1. **Camera calibration**
-
-   * Pixel → centimeter conversion
-2. **Ground-truth weights**
-
-   * A small set of birds weighed manually
-3. **Regression model**
-
-   * Learn:
-
-     ```
-     weight (g) = m × area + c
-     ```
-
-Once calibrated, the same pipeline can output **true bird weight and flock biomass**.
-
----
-
-## Video Preprocessing
-
-To enable fast inference and deployment:
-
-* Videos are converted to **H.264 MP4**
-* Frame rate can be sampled (e.g., 10 FPS)
-* Resolution can be downscaled to ~720p
-
-This reduces storage by >90% while preserving tracking accuracy for slow-moving poultry.
-
----
-
-## API
-
-### Health Check
-
-```
+### ✅ Health Check
+```http
 GET /health
 ```
-
-Returns:
-
-```
-{"status": "OK"}
+**Response**
+```json
+{"status": "ok"}
 ```
 
----
-
-### Analyze Video
-
-```
+### 🎥 Analyze Video
+```http
 POST /analyze_video
 ```
+**Form Data**
+- `video_file`: MP4 video (multipart upload)
+- `conf_thresh` (optional, default=0.6): YOLO confidence threshold
 
-Accepts a CCTV video and returns:
+**Response JSON**
+```json
+{
+  "message": "Processing complete",
+  "video_path": "/tmp/.../tracked.mp4",
+  "json_path": "/tmp/.../analysis.json",
+  "frames": 1250
+}
+```
 
-* `counts_over_time`
-* `tracks_sample`
-* `weight_estimates`
-* `artifacts` (annotated video + JSON)
+> 💡 The actual **annotated video** and **full analysis JSON** are saved to disk. In production, serve these as downloadable files or return URLs.
 
 ---
 
-## Limitations and Assumptions
+## ▶️ How to Run the Project
 
-* Fixed camera (no pan/tilt)
-* Birds are visible most of the time
-* Weight estimates are **relative**, not absolute grams
-* No long-term full occlusions
+### 1️⃣ Create & Activate Virtual Environment
+```bash
+python -m venv venv
+```
+- **Linux/macOS**: `source venv/bin/activate`  
+- **Windows (CMD)**: `venv\Scripts\activate`
+
+### 2️⃣ Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+> ⚠️ **FFmpeg** must be installed on your system (for OpenCV video I/O).  
+> - Ubuntu: `sudo apt install ffmpeg`  
+> - Windows: Included with many Python distributions or install via [ffmpeg.org](https://ffmpeg.org)
+
+### 3️⃣ Start the FastAPI Server
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+On success:
+```
+Uvicorn running on http://127.0.0.1:8000
+```
 
 ---
 
-## Future Improvements
+## 🧪 Test the API (Windows Example)
 
-* Camera calibration for gram-accurate weights
-* Temporal smoothing of weight curves
-* Appearance-based re-identification (ReID embeddings)
-* Flock-level biomass and growth tracking
-* Live RTSP streaming support
+### 🩺 Health Check
+```cmd
+curl.exe http://127.0.0.1:8000/health
+```
+✅ Expected: `{"status":"ok"}`
+
+### 🎥 Analyze a Video
+**Multi-line (CMD):**
+```cmd
+curl.exe -X POST http://127.0.0.1:8000/analyze_video ^
+-F "video_file=@Input_Videos/sample.mp4" ^
+-F "conf_thresh=0.01"
+```
+
+**Single-line (CMD or PowerShell):**
+```cmd
+curl.exe -X POST http://127.0.0.1:8000/analyze_video -F "video_file=@Input_Videos/sample.mp4" -F "conf_thresh=0.01"
+```
+
+> ✅ **Windows Tips**:
+> - Always use `curl.exe` (not `curl`)
+> - Use `@` before file path
+> - Use `^` for line breaks in CMD
+
+---
+
+## 📁 Output Structure
+After `/analyze_video`, results are saved in a temporary directory (returned in response):
+
+```
+analysis.json
+├── video_info: {filename, fps, resolution, total_frames}
+├── weight_estimation: {method, note}
+└── frame_logs: [
+      {
+        "frame_id": 0,
+        "timestamp_sec": 0.0,
+        "bird_count": 24,
+        "birds": [
+          {"track_id": 5, "bbox": [x1,y1,x2,y2], "area_px2": 12400, "weight_proxy": 12400},
+          ...
+        ]
+      },
+      ...
+    ]
+```
+
+Annotated video: `tracked.mp4` (green boxes + no text overlay for clarity)
+
+---
+
+## ⚠️ Limitations & Assumptions
+- **Fixed camera** (no pan/tilt/zoom)  
+- Birds are **mostly visible** (no long-term full occlusions)  
+- **Weight estimates are relative** (not in grams)  
+- Assumes birds move **slowly** (suitable for 10 FPS sampling)
+
+---
+
+## 🚧 Future Improvements
+- Camera calibration → **absolute weight (grams)**  
+- Temporal smoothing of weight curves  
+- Appearance-based Re-ID to reduce ID switches  
+- Flock-level **biomass & growth tracking**  
+- **RTSP/live stream** support
+
+---
+
+> 📦 **Demo outputs** (`tracked_output_ultra_small.mp4`, `bird_analysis.json`) are generated 

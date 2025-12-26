@@ -183,4 +183,4 @@ Annotated video: `tracked.mp4` (green boxes + no text overlay for clarity)
 
 ---
 
-> 📦 **Demo outputs** (`tracked_output_ultra_small.mp4`, `bird_analysis.json`) are generated 
+> 📦 **Demo outputs** (`output_prediction.mp4`, `bird_analysis_3x3.json`) are generated 

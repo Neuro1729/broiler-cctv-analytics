@@ -14,7 +14,7 @@ Designed for **commercial poultry farms** with static cameras and naturally movi
 ---
 ## Demo
 
-[![Watch the video](https://img.youtube.com/vi/0BOnEA6IgQI/0.jpg)](https://youtu.be/0BOnEA6IgQI)
+[![Watch the video](https://img.youtube.com/vi/J-06fdpUQFU/0.jpg)](https://youtu.be/J-06fdpUQFU)
 
 ## 🧠 Methodology
 
